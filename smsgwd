@@ -261,6 +261,7 @@ def process_queue(GWs):
                 pin = None
             gsmmodems[gw] = connect_to_gsmmodem(gw_params['tty'], gw_params['baud'], pin)
 
+    print "Info: Ready to process queue"
     while True:
         if len(queue):
             qprocess = get_element_with_highest_priority(queue)
@@ -338,7 +339,7 @@ if __name__ == "__main__":
         """)
     default_config_file = '/etc/smsgwd.cfg'
     parser.add_argument('-c', action='store', type=str, default=default_config_file, help='Config file (default: %s)' % default_config_file)
-    parser.add_argument('-v', action='store_true', default=False, help='Verbose')
+    parser.add_argument('--verbose', '-v', default=0, action='count', help='Verbose, more -v => More verbose')
     argp = parser.parse_args()
 
     [socketCfg, GWs] = readConfig(argp.c)
