@@ -1,0 +1,361 @@
+#!/usr/bin/python2
+
+# SMS GW Server handling multiple SMS GW backends
+import thread
+import socket
+import json
+import time
+import sys
+import argparse
+import urllib
+import traceback
+import ConfigParser
+
+# For gsmmodem
+import logging
+from gsmmodem.modem import GsmModem, SentSms
+from gsmmodem.exceptions import TimeoutException, PinRequiredError, IncorrectPinError
+
+queue = []
+
+# create a socket object
+serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+def socket_2_queue():
+    """Get jobs from socket and fill into queue
+    """
+
+    while True:
+        # establish a connection
+        clientsocket,addr = serversocket.accept()
+        data = clientsocket.recv(8192)
+        jdata = json.loads(data)
+        jdata['clientsocket'] = clientsocket
+        queue.append(jdata)
+
+def get_element_with_highest_priority(queue):
+    """Get next job to execute from queue
+
+    Highest priority is 0
+    Evaluating on queue[0..-1]['priority'], starting with first element in queue
+    """
+
+    priority = -1
+    while True:
+        priority += 1
+        for i in xrange(len(queue)):
+            if queue[i]['priority'] == priority:
+                return queue.pop(i)
+
+def gsmmodem_handle_SMS(sms):
+    """Process incomming SMSes (both those there was recived before smsgwd was started and during execution of smsgwd
+    """
+
+    print(u'''SMS: F: %s at %s; st: %s, msg: %s''' % (sms.number, sms.time, sms.status, sms.text))
+
+def gsmmodem_recieve_old_unread(modem):
+    """gsmmodem: Read and delete old unread messages (existing SMSes when smsgwd starts)
+    """
+
+    for mem in ["ME"]:#["SM","ME","SM_P","ME_P","MT"]:
+        messages = modem.listStoredSms(0, mem, True)
+        for sms in messages:
+            gsmmodem_handle_SMS(sms)
+    time.sleep(5) # To prevent reading from port not open
+
+def connect_to_gsmmodem(tty, baud, pin=None):
+    """Connect to a gsmmodem
+    """
+
+    modem = GsmModem(
+        tty, baud,
+        smsReceivedCallbackFunc=gsmmodem_handle_SMS,
+    )
+    logging.getLogger('gsmmodem.modem.GsmModem').setLevel(logging.WARNING)
+    logging.getLogger('gsmmodem').setLevel(logging.WARNING)
+
+    # Uncomment the following line to see what the modem is doing:
+    logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.WARNING)
+
+    try:
+        modem.connect(pin)
+    except PinRequiredError:
+        return [1, 'Error: SIM card PIN required. Please specify a PIN with the -p argument.\n']
+    except IncorrectPinError:
+        return [1, 'Error: Incorrect SIM card PIN entered.\n']
+    try:
+        modem.waitForNetworkCoverage(5)
+    except TimeoutException:
+        modem.close()
+        return [1, 'Network signal strength is not sufficient, please adjust modem PSU, position/antenna and try again.']
+
+    gsmmodem_recieve_old_unread(modem) # Process old unread SMS'es
+    return modem
+
+def send_via_gsmmodem(gsmmodem, to, msg, GetDeliveryReport):
+    """Send A SMS using gsmmodem
+    """
+
+    if GetDeliveryReport:
+        pass
+        #print ('\nSending SMS and waiting for delivery report...')
+    try:
+        sms = gsmmodem.sendSms(
+            to,
+            msg, #.decode('utf8').encode('iso-8859-1'),
+            waitForDeliveryReport=GetDeliveryReport,
+        )
+    except TimeoutException:
+        #gsmmodem.close()
+        time.sleep(10) # To prevent reading from port not open
+        return [1, 'Failed to send message: the send operation timed out']
+    else:
+        #gsmmodem.close()
+        time.sleep(10) # To prevent reading from port not open
+        if GetDeliveryReport and sms.report:
+            if sms.report.status == 0:
+                return [sms.report.status, 'gsmmodem: Sent&Delivered']
+            else:
+                return [sms.report.status, 'gsmmodem: Message sent{0}'.format(' and delivered OK.' if sms.status == SentSms.DELIVERED else ', but not delivered.')]
+        elif sms.status == SentSms.DELIVERED:
+            return [0, '']
+        elif sms.status == SentSms.ENROUTE: # Status indicating message is still enroute to destination
+            return [1, 'gsmmodem: Enroute']
+        elif sms.status == SentSms.FAILED: # Status indicating message delivery has failed
+            return [2, 'gsmmodem: Failed']
+        else:
+            return [-1, 'gsmmodem: Unknown error']
+
+    #time.sleep(1) # To prevent reading from port not open
+    return [0, '']
+
+def send_sms_for_all_backend_types(gw, gw_params, gsmmodems, p):
+    """Send a SMS
+    """
+
+    if gw_params['type'] == 'NoSmsGw':
+        code = 0
+        msg  = u'Info: SMS not sent to %s since type=NoSmsGw is used for SmsGW \'%s\'' % (p['to'], gw)
+    elif gw_params['type'] == 'smsit.dk':
+        url = 'http://www.smsit.dk/api/sendSms.php'
+        if p['to'].startswith('+'):
+            to = p['to'][1:] # Just strip off the + sign
+        else:
+            to = '45' + p['to'], # Assume a danish number (smsit.dk is danish, don't have checked if it works for international numbers
+        params = urllib.urlencode({
+            'apiKey': gw_params['key'],
+            'senderId': p['from'],
+            'mobile': to,
+            'message': p['msg'].encode('utf-8'),
+        })
+        # Send
+        try:
+            f = urllib.urlopen(url, params)
+        except:
+            code = -1
+            msg  = u'Error: Can\'t connect to SMS Gateway for \'%s\'' % ('sms-'+sms_grp)
+            return {'code':code, 'msg': msg}
+        code = int(f.read())
+        msg = ''
+    elif gw_params['type'] == 'eu.apksoft.android.smsgateway':
+        params = urllib.urlencode({
+            'password': gw_params['key'],
+            'phone': p['to'],
+            'text': p['msg'].encode('utf-8'),
+        })
+        # Send
+        try:
+            f = urllib.urlopen(gw_params['url'] + '?' + params)
+        except:
+            code = -1
+            msg = u'Error: Can\'t connect to SMS GW Backend for \'%s\'' % (gw)
+            return {'code':code, 'msg': msg}
+        msg = f.read()
+
+        msg = msg.replace('\n', '')
+
+        match = re.search(
+            '.*?<body>(?P<body>.*)</body>.*',
+            msg)
+        msg = match.group('body')
+        msg = msg.replace('<br/>', '\n').rstrip()
+
+        if msg == 'Mesage SENT!': # Status from GW is misspelled.
+            code = 0
+        elif msg == 'Invalid parameters':
+            code = 1
+        else:
+            code = 28
+    elif gw_params['type'] == 'gsmmodem':
+        if 'GetDeliveryReport' in p:
+            GetDeliveryReport = p['GetDeliveryReport']
+        else:
+            GetDeliveryReport = gw_params['GetDeliveryReport']
+
+        try:
+            [code, msg] = send_via_gsmmodem(gsmmodems[gw], p['to'], p['msg'], GetDeliveryReport)
+        except:
+            code = 1
+            msg  = 'send_via_gsmmodem() failed with error:\n%s' % traceback.format_exc() # sys.exc_info().join(' ')
+            msg += 'Retry to connect to modem and resent...\n'
+            try:
+                gsmmodems[gw] = connect_to_gsmmodem(gw_params['tty'], gw_params['baud'], pin)
+                [code, msg2] = send_via_gsmmodem(gsmmodems[gw], p['to'], p['msg'], GetDeliveryReport)
+                msg += 'Final status message:\n%s\n' % msg2
+            except:
+                code = 1
+                msg  += 'Tried to reconnect and re- send_via_gsmmodem() failed with error:\n%s' % traceback.format_exc() # sys.exc_info().join(' ')
+    else:
+        code = -1
+        msg  = u'Error: Unimplemented SmsGw Backend type: "'+ gw_params['type']
+    return [code, msg]
+
+def exec_queue_job(GWs, gsmmodems, p):
+    """Execute a job in the queue (Call send_sms_for_all_backend_types) with the wanted types (any/all/specific backend)
+    """
+
+    one_successfull_is_enough = True
+    if p['gw'] == 'cheap':
+        gws = [GWs['cheap']]
+    elif p['gw'] == 'default':
+        gws = [GWs['default']]
+    elif p['gw'] == 'any':
+        gws = GWs['realactive']
+        one_successfull_is_enough = True
+    elif p['gw'] == 'all':
+        gws = GWs['realactive']
+        one_successfull_is_enough = False
+    else:
+        gws = [p['gw']]
+    code = 0
+    msg = ''
+    num_gws_used = 0
+    for gw in gws:
+        #print 'Dbg: Sending via %s' % gw
+        [codeThis, msgThis] = send_sms_for_all_backend_types(gw, GWs['gw'][gw], gsmmodems, p)
+        code += abs(codeThis)
+        msg += '\n%s: %d; %s' % (gw, codeThis, msgThis)
+        num_gws_used += 1
+        if codeThis == 0 and one_successfull_is_enough:
+            code = 0
+            break
+
+    if num_gws_used > 1:
+        return {'code':code, 'msg': msg}
+    else:
+        return {'code':codeThis, 'msg': msgThis}
+
+def process_queue(GWs):
+    """Connect to gsmmodens and Process the queue
+    """
+    # Create a dict gsmmodems of modem connections to gw's of type gsmmodem
+    gsmmodems = {}
+    for (gw, gw_params) in GWs['gw'].iteritems():
+        if gw_params['type'] == 'gsmmodem':
+            tty  = gw_params['tty']
+            baud = int(gw_params['baud'])
+            try:
+                pin = int(gw_params['pin'])
+            except:
+                pin = None
+            gsmmodems[gw] = connect_to_gsmmodem(gw_params['tty'], gw_params['baud'], pin)
+
+    while True:
+        if len(queue):
+            qprocess = get_element_with_highest_priority(queue)
+            res = exec_queue_job(GWs, gsmmodems, qprocess)
+            qprocess['clientsocket'].send(json.dumps(res))
+            qprocess['clientsocket'].close()
+
+def readConfig(config_file):
+    """Read config file
+    """
+
+    config = ConfigParser.ConfigParser()
+    config.read(config_file)
+
+    # Read socketCfg section
+    socketCfg = {}
+    socketCfg['host']	= config.get('socketCfg', 'host')
+    socketCfg['port']	= config.getint('socketCfg', 'port')
+    if socketCfg['host'] == 'gethostname()':
+        # get local machine name
+        socketCfg['host'] = socket.gethostname()
+
+    # Read GWs section
+    GWs = {}
+    GWs['active']	= json.loads(config.get('GWs', 'active'))  # List of active gateways
+    GWs['cheap']	= config.get('GWs', 'cheap')  # Cheap
+    GWs['default']	= config.get('GWs', 'default', 0)  # Default
+
+    GWs['realactive'] = GWs['active']
+    if 'NoSmsGw' in GWs['realactive']:
+            GWs['realactive'].remove('NoSmsGw')
+
+    # Feed parameters for all active GWs to dict gw
+    GWs['gw'] = {}
+    for g in GWs['active']:
+        section = 'smsgw-%s' % (g)
+        GWs['gw'][g] = {'type': config.get(section , 'type')}
+        params = []
+        if GWs['gw'][g]['type'] == 'NoSmsGw':
+            pass
+        elif GWs['gw'][g]['type'] == 'gsmmodem':
+            params = ['tty', 'baud', 'pin', 'GetDeliveryReport']
+        elif GWs['gw'][g]['type'] == 'smsit.dk':
+            params = ['key', 'default_from']
+        elif GWs['gw'][g]['type'] == 'eu.apksoft.android.smsgateway':
+            params = ['url', 'key']
+        else:
+            print "Error: Unkown SmsGW type: '%s', ignoring it." % GWs['gw'][g]['type']
+            GWs['gw'].pop(g)
+
+        for p in params:
+            GWs['gw'][g][p] = config.get(section , p)
+
+        # For gsmmodem, convert baud to integer and pin to integer or None
+        if GWs['gw'][g]['type'] == 'gsmmodem':
+            GWs['gw'][g]['baud'] = int(GWs['gw'][g]['baud'])
+            try:
+                GWs['gw'][g]['pin'] = int(GWs['gw'][g]['pin'])
+            except:
+                GWs['gw'][g]['pin'] = None
+
+    return [socketCfg, GWs]
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="""SMS GW Server
+
+        Receives regests to send SMS's from SMS Clients over a socket interface.
+        The clients specifies the priority of the SMS (0=highest priority, inf=lowest priority (but use 0..<low number, e.g. 10 or 20> for effectivity)
+
+        This server sends the SMS's in the priotized order, tests have shown that it takes up to around 5 seconds to send a SMS.
+
+        For further details see smsgw - the client
+        """)
+    default_config_file = '/etc/smsgwd.cfg'
+    parser.add_argument('-c', action='store', type=str, default=default_config_file, help='Config file (default: %s)' % default_config_file)
+    parser.add_argument('-v', action='store_true', default=False, help='Verbose')
+    argp = parser.parse_args()
+
+    [socketCfg, GWs] = readConfig(argp.c)
+
+    # bind to the port
+    serversocket.bind((socketCfg['host'], socketCfg['port']))
+
+    # queue up to 5 requests
+    serversocket.listen(5)
+
+    # Create two threads as follows
+    try:
+        thread.start_new_thread(socket_2_queue, () )
+        thread.start_new_thread(process_queue, (GWs, ) )
+    except:
+        print "Error: unable to start thread"
+        sys.exit(1)
+
+    while 1:
+        pass

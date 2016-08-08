@@ -1,0 +1,98 @@
+#!/usr/bin/python2
+
+# SMS GW Frontend
+import socket
+import json
+import argparse
+import sys
+
+class smsgw:
+    DEFAULT_PORT = 2525 # self.port must match the smsgwd port
+
+    def __init__(self, host='localhost', port=DEFAULT_PORT):
+        self.host = host
+        self.PORT = port
+
+    def send_sms(self, params):
+        """Send a sms - actually submit the SMS to the queue and wait to get the status from sending the SMS
+
+        params must be a dict that must contain the following:
+        - params['priority'] (int)
+        - params['gw'] (string containg one of: cheap, default, any, all, or one of the GWs in active list in smsgwd.cfg)
+        - params['to'] (Recipient phone number, either national (no +) or international (starting with +))
+        - params['msg'] (The message)
+
+        Optional arguments (can always be specified)
+        - params['from'] (From name, only some GW backends support that, eg. of type smsit.dk)
+        - params['GetDeliveryReport'] (True/False, only used by GW of type gsmmodem)
+        - params['verbose'] (unused)
+        """
+
+        # create a socket object
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        # connection to hostname on the PORT.
+        s.connect((self.host, self.PORT))
+        s.send(json.dumps(params))
+        # Receive no more than 8192 bytes
+        response = json.loads(s.recv(8192))
+        s.close()
+        return response
+
+if __name__ == "__main__":
+
+    def main():
+        """Command line tool for send_sms
+        """
+
+        parser = argparse.ArgumentParser(
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            description="""SMS GW Client
+
+            Sends SMS's to SmsGw Daemon over a socket interface.
+            The clients specifies the priority of the SMS (0=highest priority, inf=lowest priority (but use 0..<low number, e.g. 10 or 20> for effectivity)
+            GW: Is one of cheap, default, <one from the active list in server config list of active servers>, all.
+                If all is used, all SMS GW backends are used, the exit code is the sum of absolute values of all exit codes and
+                the exit message are lines for each gw of this form: "<gw name>: <exit code>; <exit message>".
+            """)
+        default_host = 'localhost'
+        default_port = smsgw().DEFAULT_PORT
+        default_priority = 10
+        default_gw = 'cheap'
+        default_from = 'SmsGw'
+
+        parser.add_argument('--host',		'-H', action='store', type=str, default=default_host, help='SMS GW Host (default: %s)' % default_host)
+        parser.add_argument('--port',		'-P', action='store', type=int, default=default_port, help='SMS GW Port (default: %d)' % default_port)
+        parser.add_argument('--priority',	'-p', action='store', type=int, default=default_priority, help='SMS Priority (0=highest priority, inf=lowest priority (but use 0..<low number, e.g. 10 or 20> for effectivity) (default: %d)' % default_priority)
+        parser.add_argument('--gw',		'-g', action='store', type=str, default=default_gw, help='Which SMS GW Backend to use, one from active list in smsgw.cfg or cheap or default or all (on the server) (default: %s)' % default_gw)
+        parser.add_argument('--sender',		'-f', action='store', type=str, default=default_from, help='SMS From, only used for some GW backends (default: %s)' % default_from)
+        parser.add_argument('--to',		'-t', action='store', type=str, required=True, help='SMS To:')
+        parser.add_argument('--msg',		'-m', action='store', type=str, required=True, help='SMS Message')
+        parser.add_argument('--report',		'-r', dest='report', action='store_true',  default=True, help='Request Status/delivery report')
+        parser.add_argument('--no-report',	'-R', dest='report', action='store_false', default=True, help='Don\'t request Status/delivery report')
+        parser.add_argument('--verbose',	'-v', action='store_true', default=False, help='Verbose')
+        argp = parser.parse_args()
+
+        params = {}
+        params['priority'] = argp.priority
+        params['gw'] = argp.gw
+        params['from'] = argp.sender
+        params['to'] = argp.to
+        params['msg'] = argp.msg
+        params['GetDeliveryReport'] = argp.report
+        params['verbose'] = argp.verbose
+
+        gw = smsgw(argp.host, argp.port)
+        resp = gw.send_sms(params)
+        code = resp.pop('code')
+        keys = resp.keys()
+        if len(keys) == 1 and 'msg' in keys: # Exact one key, the msg key
+            msg = resp['msg']
+        else:
+            msg = json.dumps(resp)
+
+        if len(msg):
+            print "Message from SmsGW Daemon: %s" % msg
+        return(code)
+
+    sys.exit(main())
