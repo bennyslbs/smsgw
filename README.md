@@ -123,3 +123,26 @@ Default location: `/etc/smsgwd.cfg`
     type = eu.apksoft.android.smsgateway
     url	 = http://192.168.0.2:9090/sendsms
     key  = AppPassword
+
+Add to systemd service system
+-----------------------------
+
+Do the following steps:
+* Create system user for the gw daemon (with limited access)
+* Add the user to group dialout
+* Copy service script from init.d/smsgw
+* Create logfile and let the smsgw user be the owner
+* Mention that service script smsgw have been updated
+* Start the script
+
+The following code does that stuff:
+
+    cp -p <smsgw>/init.d/smsgw /etc/init.d/smsgw
+    # I needed the user to use bash to flush output to logfile line by line
+    sudo useradd -s /bin/bash -r -M smsgw
+    sudo usermod -a -G dialout smsgw
+    sudo chown root:root /etc/init.d/smsgw
+    sudo touch /var/log/smsgw.log
+    sudo chown smsgw /var/log/smsgw.log
+    sudo update-rc.d smsgw defaults
+    sudo service smsgw start
