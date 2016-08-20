@@ -72,11 +72,11 @@ def connect_to_gsmmodem(tty, baud, pin=None):
         tty, baud,
         smsReceivedCallbackFunc=gsmmodem_handle_SMS,
     )
-    logging.getLogger('gsmmodem.modem.GsmModem').setLevel(logging.WARNING)
-    logging.getLogger('gsmmodem').setLevel(logging.WARNING)
+    logging.getLogger('gsmmodem.modem.GsmModem').setLevel(logging.DEBUG)
+    logging.getLogger('gsmmodem').setLevel(logging.DEBUG)
 
     # Uncomment the following line to see what the modem is doing:
-    logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.WARNING)
+    logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.DEBUG)
 
     try:
         modem.connect(pin)
@@ -200,7 +200,7 @@ def send_sms_for_all_backend_types(gw, gw_params, gsmmodems, p):
             msg  = 'send_via_gsmmodem() failed with error:\n%s' % traceback.format_exc() # sys.exc_info().join(' ')
             msg += 'Retry to connect to modem and resent...\n'
             try:
-                gsmmodems[gw] = connect_to_gsmmodem(gw_params['tty'], gw_params['baud'], pin)
+                gsmmodems[gw] = connect_to_gsmmodem(gw_params['tty'], gw_params['baud'], gw_params['pin'])
                 [code, msg2] = send_via_gsmmodem(gsmmodems[gw], p['to'], p['msg'], GetDeliveryReport)
                 msg += 'Final status message:\n%s\n' % msg2
             except:
@@ -253,13 +253,7 @@ def process_queue(GWs):
     gsmmodems = {}
     for (gw, gw_params) in GWs['gw'].iteritems():
         if gw_params['type'] == 'gsmmodem':
-            tty  = gw_params['tty']
-            baud = int(gw_params['baud'])
-            try:
-                pin = int(gw_params['pin'])
-            except:
-                pin = None
-            gsmmodems[gw] = connect_to_gsmmodem(gw_params['tty'], gw_params['baud'], pin)
+            gsmmodems[gw] = connect_to_gsmmodem(gw_params['tty'], gw_params['baud'], gw_params['pin'])
 
     print "Info: Ready to process queue"
     while True:
