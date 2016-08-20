@@ -72,11 +72,11 @@ def connect_to_gsmmodem(tty, baud, pin=None):
         tty, baud,
         smsReceivedCallbackFunc=gsmmodem_handle_SMS,
     )
-    logging.getLogger('gsmmodem.modem.GsmModem').setLevel(logging.DEBUG)
-    logging.getLogger('gsmmodem').setLevel(logging.DEBUG)
+    logging.getLogger('gsmmodem.modem.GsmModem').setLevel(logging.WARNING)
+    logging.getLogger('gsmmodem').setLevel(logging.WARNING)
 
     # Uncomment the following line to see what the modem is doing:
-    logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.DEBUG)
+    logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', level=logging.WARNING)
 
     try:
         modem.connect(pin)
