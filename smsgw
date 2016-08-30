@@ -35,8 +35,22 @@ def main():
     parser.add_argument('--msg',		'-m', action='store', type=str, required=True, help='SMS Message')
     parser.add_argument('--report',		'-r', dest='report', action='store_true',  default=True, help='Request Status/delivery report')
     parser.add_argument('--no-report',	'-R', dest='report', action='store_false', default=True, help='Don\'t request Status/delivery report')
+    parser.add_argument('--smsit.dk-codes', dest='smsitHelp', default=False, action='store_true', help='Print SMSit.dk exit codes')
     parser.add_argument('--verbose',	'-v', default=0, action='count', help='Verbose, more -v => More verbose')
     argp = parser.parse_args()
+
+    if argp.smsitHelp:
+        print u"""SMSit.dk exit codes:
+        Kode 	Betydning
+        0 	Alt gik som det skulle!
+        1 	Ugyldig API-key
+        2 	Ugyldigt afsendernavn
+        3 	Ugyldigt karaktersaet (charset)
+        4 	Ugyldigt mobilnummer
+        5 	Der er ikke udfyldt en besked
+        6 	Beskeden er for lang
+        7 	API-key findes ikke"""
+        sys.exit(0)
 
     params = {}
     params['priority'] = argp.priority

@@ -146,7 +146,7 @@ def send_sms_for_all_backend_types(gw, gw_params, gsmmodems, p):
         params = urllib.urlencode({
             'apiKey': gw_params['key'],
             'senderId': p['from'],
-            'mobile': to,
+            'mobile': '%s' % to,
             'message': p['msg'].encode('utf-8'),
         })
         # Send
