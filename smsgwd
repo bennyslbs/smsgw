@@ -262,6 +262,8 @@ def process_queue(GWs):
             res = exec_queue_job(GWs, gsmmodems, qprocess)
             qprocess['clientsocket'].send(json.dumps(res))
             qprocess['clientsocket'].close()
+        else:
+            time.sleep(1) # Less CPU usage
 
 def readConfig(config_file):
     """Read config file
@@ -353,4 +355,4 @@ if __name__ == "__main__":
         sys.exit(1)
 
     while 1:
-        pass
+        time.sleep(10) # Less CPU usage
