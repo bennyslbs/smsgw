@@ -90,7 +90,7 @@ def connect_to_gsmmodem(tty, baud, pin=None):
     try:
         modem.connect(
             pin=pin,
-            waitingForModemToStartInSeconds=0,
+            waitingForModemToStartInSeconds=1,  # Sometimes 0 to little, 1 seems ok, but maybe give a bit more.
         )
     except PinRequiredError:
         return [1, 'Error: SIM card PIN required. Please specify a PIN with the -p argument.\n']
