@@ -16,6 +16,8 @@ import logging
 from gsmmodem.modem import GsmModem, SentSms
 from gsmmodem.exceptions import TimeoutException, PinRequiredError, IncorrectPinError
 
+logging.basicConfig(level=logging.INFO)
+
 import pprint
 pp = pprint.PrettyPrinter(indent=4)
 
@@ -57,7 +59,14 @@ def gsmmodem_handle_SMS(sms):
     """Process incomming SMSes (both those there was recived before smsgwd was started and during execution of smsgwd
     """
 
-    print(u'''SMS: F: %s at %s; st: %s, msg: %s''' % (sms.number, sms.time, sms.status, sms.text))
+    logging.info(
+        u'''SMS: F: %s at %s; st: %s, msg: %s''' % (
+            sms.number,
+            sms.time,
+            sms.status,
+            sms.text,
+        )
+    )
 
 def gsmmodem_recieve_old_unread(modem):
     """gsmmodem: Read and delete old unread messages (existing SMSes when smsgwd starts)
@@ -364,6 +373,7 @@ if __name__ == "__main__":
     thread_process_queue = threading.Thread(target=process_queue, args=(GWs, ) )
     thread_socket_2_queue.start()
     thread_process_queue.start()
+    logging.info('Ready 🤓')
 
     while 1:
         time.sleep(10) # Less CPU usage
