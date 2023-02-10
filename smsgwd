@@ -64,7 +64,7 @@ def gsmmodem_handle_SMS(sms):
             sms.number,
             sms.time,
             sms.status,
-            sms.text,
+            sms.text.encode('utf-16','surrogatepass').decode('utf-16'),
         )
     )
 
