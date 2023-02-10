@@ -1,0 +1,12 @@
+version: '3.3'
+
+services:
+  smsgw:
+    container_name: smsgw
+    build:
+      context: .
+      dockerfile: ./container/Dockerfile
+    devices:
+      - "/dev/gsmmodemMySim:/dev/gsmmodemMySim"
+    ports:
+      - '2525:2525'
