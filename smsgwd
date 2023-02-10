@@ -35,7 +35,11 @@ def socket_2_queue():
     while True:
         # establish a connection
         clientsocket, addr = serversocket.accept()
-        data = clientsocket.recv(8192)
+        try:
+            data = clientsocket.recv(8192)
+        except:
+            print('exception during reading from socket')
+            continue
         jdata = json.loads(data)
         jdata['clientsocket'] = clientsocket
         with queue_semaphore:
