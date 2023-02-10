@@ -56,7 +56,7 @@ class smsgw:
 
         # connection to hostname on the PORT.
         s.connect((self.host, self.PORT))
-        s.send(json.dumps(params))
+        s.send(json.dumps(params).encode('utf-8'))
         # Receive no more than 8192 bytes
         response = json.loads(s.recv(8192))
         s.close()

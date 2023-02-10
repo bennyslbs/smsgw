@@ -1,7 +1,7 @@
 #!/usr/bin/python2
 
 # SMS GW Server handling multiple SMS GW backends
-import thread
+import threading
 import socket
 import json
 import time
@@ -9,14 +9,18 @@ import sys
 import argparse
 import urllib
 import traceback
-import ConfigParser
+import configparser
 
 # For gsmmodem
 import logging
 from gsmmodem.modem import GsmModem, SentSms
 from gsmmodem.exceptions import TimeoutException, PinRequiredError, IncorrectPinError
 
-queue = []
+import pprint
+pp = pprint.PrettyPrinter(indent=4)
+
+queue = []  # Shared between threads socket_2_queue (appending elements) and process_queue (pop by priority
+queue_semaphore = threading.BoundedSemaphore(value=1)
 
 # create a socket object
 serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -25,14 +29,15 @@ serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 def socket_2_queue():
     """Get jobs from socket and fill into queue
     """
-
+    global queue
     while True:
         # establish a connection
-        clientsocket,addr = serversocket.accept()
+        clientsocket, addr = serversocket.accept()
         data = clientsocket.recv(8192)
         jdata = json.loads(data)
         jdata['clientsocket'] = clientsocket
-        queue.append(jdata)
+        with queue_semaphore:
+            queue.append(jdata)
 
 def get_element_with_highest_priority(queue):
     """Get next job to execute from queue
@@ -251,25 +256,26 @@ def process_queue(GWs):
     """
     # Create a dict gsmmodems of modem connections to gw's of type gsmmodem
     gsmmodems = {}
-    for (gw, gw_params) in GWs['gw'].iteritems():
+    for (gw, gw_params) in GWs['gw'].items():
         if gw_params['type'] == 'gsmmodem':
             gsmmodems[gw] = connect_to_gsmmodem(gw_params['tty'], gw_params['baud'], gw_params['pin'])
 
-    print "Info: Ready to process queue"
+    print("Info: Ready to process queue")
     while True:
-        if len(queue):
-            qprocess = get_element_with_highest_priority(queue)
-            res = exec_queue_job(GWs, gsmmodems, qprocess)
-            qprocess['clientsocket'].send(json.dumps(res))
-            qprocess['clientsocket'].close()
-        else:
-            time.sleep(1) # Less CPU usage
+        time.sleep(1) # Less CPU use + Idle betwen getting semaphone - needed?, not tried without
+        with queue_semaphore:
+            if len(queue):
+                qprocess = get_element_with_highest_priority(queue)
+                res = exec_queue_job(GWs, gsmmodems, qprocess)
+                qprocess['clientsocket'].send(json.dumps(res))
+                qprocess['clientsocket'].close()
+
 
 def readConfig(config_file):
     """Read config file
     """
 
-    config = ConfigParser.ConfigParser()
+    config = configparser.ConfigParser()
     config.read(config_file)
 
     # Read socketCfg section
@@ -284,7 +290,7 @@ def readConfig(config_file):
     GWs = {}
     GWs['active']	= json.loads(config.get('GWs', 'active'))  # List of active gateways
     GWs['cheap']	= config.get('GWs', 'cheap')  # Cheap
-    GWs['default']	= config.get('GWs', 'default', 0)  # Default
+    GWs['default']	= config.get('GWs', 'default', fallback=0)  # Default
 
     GWs['realactive'] = GWs['active']
     if 'NoSmsGw' in GWs['realactive']:
@@ -305,7 +311,7 @@ def readConfig(config_file):
         elif GWs['gw'][g]['type'] == 'eu.apksoft.android.smsgateway':
             params = ['url', 'key']
         else:
-            print "Error: Unkown SmsGW type: '%s', ignoring it." % GWs['gw'][g]['type']
+            print("Error: Unkown SmsGW type: '%s', ignoring it." % GWs['gw'][g]['type'])
             GWs['gw'].pop(g)
 
         for p in params:
@@ -347,12 +353,10 @@ if __name__ == "__main__":
     serversocket.listen(5)
 
     # Create two threads as follows
-    try:
-        thread.start_new_thread(socket_2_queue, () )
-        thread.start_new_thread(process_queue, (GWs, ) )
-    except:
-        print "Error: unable to start thread"
-        sys.exit(1)
+    thread_socket_2_queue = threading.Thread(target=socket_2_queue, args=() )
+    thread_process_queue = threading.Thread(target=process_queue, args=(GWs, ) )
+    thread_socket_2_queue.start()
+    thread_process_queue.start()
 
     while 1:
         time.sleep(10) # Less CPU usage

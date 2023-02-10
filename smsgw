@@ -40,7 +40,7 @@ def main():
     argp = parser.parse_args()
 
     if argp.smsitHelp:
-        print u"""SMSit.dk exit codes:
+        print(u"""SMSit.dk exit codes:
         Kode 	Betydning
         0 	Alt gik som det skulle!
         1 	Ugyldig API-key
@@ -49,7 +49,7 @@ def main():
         4 	Ugyldigt mobilnummer
         5 	Der er ikke udfyldt en besked
         6 	Beskeden er for lang
-        7 	API-key findes ikke"""
+        7 	API-key findes ikke""")
         sys.exit(0)
 
     params = {}
@@ -71,7 +71,7 @@ def main():
         msg = json.dumps(resp)
 
     if len(msg):
-        print "Message from SmsGW Daemon: %s" % msg
+        print("Message from SmsGW Daemon: %s" % msg)
     return(code)
 
 sys.exit(main())
