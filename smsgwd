@@ -13,7 +13,7 @@ import configparser
 
 # For gsmmodem
 import logging
-from gsmmodem.modem import GsmModem, SentSms
+from gsmmodem.modem import GsmModem, StatusReport, SentSms
 from gsmmodem.exceptions import TimeoutException, PinRequiredError, IncorrectPinError
 
 logging.basicConfig(level=logging.INFO)
@@ -134,25 +134,28 @@ def send_via_gsmmodem(gsmmodem, to, msg, GetDeliveryReport):
         #gsmmodem.close()
         time.sleep(10) # To prevent reading from port not open
         return [1, 'Failed to send message: the send operation timed out']
-    else:
-        #gsmmodem.close()
-        time.sleep(10) # To prevent reading from port not open
-        if GetDeliveryReport and sms.report:
-            if sms.report.status == 0:
-                return [sms.report.status, 'gsmmodem: Sent&Delivered']
-            else:
-                return [sms.report.status, 'gsmmodem: Message sent{0}'.format(' and delivered OK.' if sms.status == SentSms.DELIVERED else ', but not delivered.')]
-        elif sms.status == SentSms.DELIVERED:
-            return [0, '']
-        elif sms.status == SentSms.ENROUTE: # Status indicating message is still enroute to destination
-            return [1, 'gsmmodem: Enroute']
-        elif sms.status == SentSms.FAILED: # Status indicating message delivery has failed
-            return [2, 'gsmmodem: Failed']
+    #gsmmodem.close()
+    # Wait up to 10 seconds to check if delivered
+    for i in range(10):
+        if sms.report.status in [StatusReport.DELIVERED, StatusReport.FAILED]:
+            break
+        time.sleep(1)
+    if GetDeliveryReport and sms.report:
+        if sms.report.status == StatusReport.DELIVERED:
+            return [sms.report.status, 'gsmmodem: Sent&Delivered']
         else:
-            return [-1, 'gsmmodem: Unknown error']
-
-    #time.sleep(1) # To prevent reading from port not open
-    return [0, '']
+            sms_status_str = '?'
+            ret_code = -1
+            if sms.status == SentSms.ENROUTE:
+                ret_code = 1
+                sms_status_str = 'ENROUTE (message is still enroute to destination).'
+            if sms.status == SentSms.DELIVERED:
+                ret_code = 0
+                sms_status_str = 'DELIVERED.'
+            if sms.status == SentSms.FAILED:
+                ret_code = 2
+                sms_status_str = 'FAILED.'
+            return [sms.report.status, f'gsmmodem: Message sending failed: {sms_status_str}']
 
 def send_sms_for_all_backend_types(gw, gw_params, gsmmodems, p):
     """Send a SMS
