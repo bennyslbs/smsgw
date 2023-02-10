@@ -24,9 +24,8 @@ pp = pprint.PrettyPrinter(indent=4)
 queue = []  # Shared between threads socket_2_queue (appending elements) and process_queue (pop by priority
 queue_semaphore = threading.BoundedSemaphore(value=1)
 
-# create a socket object
-serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+# create variable for socket object
+serversocket = None
 
 def socket_2_queue():
     """Get jobs from socket and fill into queue
@@ -366,11 +365,20 @@ if __name__ == "__main__":
 
     [socketCfg, GWs] = readConfig(argp.c)
 
-    # bind to the port
-    serversocket.bind((socketCfg['host'], socketCfg['port']))
-
-    # queue up to 5 requests
-    serversocket.listen(5)
+    # Default: Basic IPv4 only, if not dualstack_ipv6
+    family = socket.AF_INET
+    dualstack_ipv6 = False
+    if socket.has_dualstack_ipv6():
+        # Both IPv4 and IPv6
+        family = socket.AF_INET6
+        dualstack_ipv6 = True
+    serversocket = socket.create_server(
+        (socketCfg['host'], socketCfg['port']),
+        family=family,
+        dualstack_ipv6=dualstack_ipv6,
+        backlog=5,  # queue up to <backlog> requests
+        reuse_port=True,
+    )
 
     # Create two threads as follows
     thread_socket_2_queue = threading.Thread(target=socket_2_queue, args=() )
