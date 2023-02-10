@@ -1,8 +1,11 @@
-#!/usr/bin/python2
+#!/usr/bin/python3
 
 # SMS GW Frontend Class
 import socket
 import json
+
+import pprint
+pp = pprint.PrettyPrinter(indent=4)
 
 class smsgw:
     DEFAULT_PORT = 2525 # self.port must match the smsgwd port
@@ -52,10 +55,22 @@ class smsgw:
                 params['GetDeliveryReport'] == True
 
         # create a socket object
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # - First get addrinfo (IPv6 or IPv4 - needs hostname lookup if not IP, handled by socket.getaddrinfo
+        srv_info = socket.getaddrinfo(
+            host=self.host,
+            port=self.PORT,
+            type=socket.SOCK_STREAM,
+            proto=socket.SOL_TCP,
+        )
+        # - Select first element
+        if len(srv_info) == 0:
+            return json.loads({'error:' 'No server found for {self.host}:{self.PORT}'})
+        selected_srv_info = srv_info[0]
+        s = socket.socket(selected_srv_info[0], selected_srv_info[1])
+        # - Connect to selected
+        s.connect(selected_srv_info[4])
 
-        # connection to hostname on the PORT.
-        s.connect((self.host, self.PORT))
+        # Send
         s.send(json.dumps(params).encode('utf-8'))
         # Receive no more than 8192 bytes
         response = json.loads(s.recv(8192))
