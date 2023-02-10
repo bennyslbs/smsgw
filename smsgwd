@@ -75,7 +75,11 @@ def connect_to_gsmmodem(tty, baud, pin=None):
 
     modem = GsmModem(
         tty, baud,
+        incomingCallCallbackFunc=None,
         smsReceivedCallbackFunc=gsmmodem_handle_SMS,
+        smsStatusReportCallback=None,
+        requestDelivery=True,
+        AT_CNMI='',
     )
     logging.getLogger('gsmmodem.modem.GsmModem').setLevel(logging.WARNING)
     logging.getLogger('gsmmodem').setLevel(logging.WARNING)
@@ -84,7 +88,10 @@ def connect_to_gsmmodem(tty, baud, pin=None):
     logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', level=logging.WARNING)
 
     try:
-        modem.connect(pin)
+        modem.connect(
+            pin=pin,
+            waitingForModemToStartInSeconds=0,
+        )
     except PinRequiredError:
         return [1, 'Error: SIM card PIN required. Please specify a PIN with the -p argument.\n']
     except IncorrectPinError:
