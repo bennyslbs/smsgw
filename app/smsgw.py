@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+# py3
 
 # SMS GW Frontend Class
 import socket
