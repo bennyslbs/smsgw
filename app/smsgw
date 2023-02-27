@@ -19,6 +19,9 @@ def main():
         GW: Is one of cheap, default, <one from the active list in server config list of active servers>, all.
             If all is used, all SMS GW backends are used, the exit code is the sum of absolute values of all exit codes and
             the exit message are lines for each gw of this form: "<gw name>: <exit code>; <exit message>".
+
+        For SMS --to <number> and --msg <message> is required
+        For Phone call --call <number> is required, --call overrules sending SMS
         """)
     default_host = 'localhost'
     default_port = smsgw.smsgw().DEFAULT_PORT
@@ -31,14 +34,28 @@ def main():
     parser.add_argument('--priority',	'-p', action='store', type=int, default=default_priority, help='SMS Priority (0=highest priority, inf=lowest priority (but use 0..<low number, e.g. 10 or 20> for effectivity) (default: %d)' % default_priority)
     parser.add_argument('--gw',		'-g', action='store', type=str, default=default_gw, help='Which SMS GW Backend to use, one from active list in smsgw.cfg or cheap or default or all (on the server) (default: %s)' % default_gw)
     parser.add_argument('--sender',		'-f', action='store', type=str, default=default_from, help='SMS From, only used for some GW backends (default: %s)' % default_from)
-    parser.add_argument('--to',		'-t', action='store', type=str, required=True, help='SMS To:')
-    parser.add_argument('--msg',		'-m', action='store', type=str, required=True, help='SMS Message')
+    parser.add_argument('--to',		'-t', action='store', type=str, default='', help='SMS To:')
+    parser.add_argument('--msg',		'-m', action='store', type=str, default='', help='SMS Message, or DTMF tones if --call')
+    parser.add_argument('--call',		'-c', action='store', type=str, default='', help='Call')
     parser.add_argument('--report',		'-r', dest='report', action='store_true',  default=True, help='Request Status/delivery report')
     parser.add_argument('--no-report',	'-R', dest='report', action='store_false', default=True, help='Don\'t request Status/delivery report')
     parser.add_argument('--no-save-to-db',	'-S', dest='save_to_db', action='store_false', default=True, help='Don\'t store SMS in sent DB')
     parser.add_argument('--smsit.dk-codes', dest='smsitHelp', default=False, action='store_true', help='Print SMSit.dk exit codes')
     parser.add_argument('--verbose',	'-v', default=0, action='count', help='Verbose, more -v => More verbose')
     argp = parser.parse_args()
+
+    action = 'call'
+    if not argp.call:
+        action = 'sms'
+        if not argp.to and not argp.msg:
+            print('Pleace specify --to <number> and --msg <message> or --call')
+            return -1
+        if not argp.to:
+            print('Pleace specify --to <number>')
+            return -1
+        if not argp.msg:
+            print('Pleace specify --msg <message>')
+            return -1
 
     if argp.smsitHelp:
         print(u"""SMSit.dk exit codes:
@@ -54,6 +71,8 @@ def main():
         sys.exit(0)
 
     params = {}
+    params['action'] = action
+    params['call'] = argp.call
     params['priority'] = argp.priority
     params['gw'] = argp.gw
     params['from'] = argp.sender

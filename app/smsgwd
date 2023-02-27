@@ -194,6 +194,46 @@ def send_via_gsmmodem(gsmmodem, to, msg, GetDeliveryReport):
                 sms_status_str = 'FAILED.'
             return [sms.report.status, f'gsmmodem: Message sending failed: {sms_status_str}']
 
+def dial_via_gsmmodem(gsmmodem, to, dtmf):
+    """Make a call(dial) using gsmmodem
+    """
+
+    call = gsmmodem.dial(to)
+    print('Waiting for call to be answered/rejected')
+    wasAnswered = False
+    ret_msg = ''
+    ret_code = 10
+    while call.active:
+        if call.answered:
+            wasAnswered = True
+            print('Call has been answered; waiting a while...')
+            # Wait for a bit - some older modems struggle to send DTMF tone immediately after answering a call
+            time.sleep(3.0)
+            print('Playing DTMF tones...')
+            try:
+                if call.active: # Call could have been ended by remote party while we waited in the time.sleep() call
+                    call.sendDtmfTone(dtmf)
+            except InterruptedException as e:
+                # Call was ended during playback
+                ret_msg += 'DTMF playback interrupted: {0} ({1} Error {2}). '.format(e, e.cause.type, e.cause.code)
+            except CommandError as e:
+                ret_msg += 'DTMF playback failed: {0}. '.format(e)
+            finally:
+                if call.active: # Call is still active
+                    call.hangup()
+                    ret_msg += 'Call answered, DTMF played back, we ended it'
+                    ret_code = 0
+                else: # Call is no longer active (remote party ended it)
+                    ret_msg += 'Call has been ended by remote party'
+                    ret_code = 1
+        else:
+            # Wait a bit and check again
+            time.sleep(0.5)
+    if not wasAnswered:
+        ret_msg += 'Call was not answered by remote party'
+        ret_code = 3
+    return([ret_code, ret_msg])
+
 def send_sms_for_all_backend_types(gw, gw_params, gsmmodems, p):
     """Send a SMS
     """
@@ -275,8 +315,40 @@ def send_sms_for_all_backend_types(gw, gw_params, gsmmodems, p):
         msg  = u'Error: Unimplemented SmsGw Backend type: "'+ gw_params['type']
     return [code, msg]
 
+
+def make_call_for_all_backend_types(gw, gw_params, gsmmodems, p):
+    """Make call (dial)
+    """
+
+    if gw_params['type'] == 'NoSmsGw':
+        code = 0
+        msg  = u'Info: Call not dialed to %s since type=NoSmsGw is used for SmsGW \'%s\'' % (p['to'], gw)
+    elif gw_params['type'] in ['smsit.dk' 'eu.apksoft.android.smsgateway']:
+        code = -1
+        msg  = u'Error: Can\'t make call via \'%s\'' % (gw_params['type'])
+    elif gw_params['type'] == 'gsmmodem':
+        try:
+            [code, msg] = dial_via_gsmmodem(gsmmodems[gw], p['call'], p['msg'])
+        except:
+            code = 1
+            msg  = 'dial_via_gsmmodem() failed with error:\n%s' % traceback.format_exc() # sys.exc_info().join(' ')
+            msg += 'Retry to connect to modem and resent...\n'
+            try:
+                gsmmodems[gw] = connect_to_gsmmodem(gw_params['tty'], gw_params['baud'], gw_params['pin'])
+                [code, msg2] = dial_via_gsmmodem(gsmmodems[gw], p['call'], p['msg'])
+                msg += 'Final status message:\n%s\n' % msg2
+            except:
+                code = 1
+                msg  += 'Tried to reconnect and re- dial_via_gsmmodem() failed with error:\n%s' % traceback.format_exc() # sys.exc_info().join(' ')
+    else:
+        code = -1
+        msg  = u'Error: Unimplemented call/dial Backend type: "'+ gw_params['type']
+    return [code, msg]
+
 def exec_queue_job(GWs, gsmmodems, p):
-    """Execute a job in the queue (Call send_sms_for_all_backend_types) with the wanted types (any/all/specific backend)
+    """Handle both sms and calls:
+    sms: Execute a job in the queue (Call send_sms_for_all_backend_types) with the wanted types (any/all/specific backend)
+    call: Execute a job in the queue (Call make_call_for_all_backend_types) with the wanted types (any/specific backend)
     """
 
     one_successfull_is_enough = True
@@ -292,12 +364,20 @@ def exec_queue_job(GWs, gsmmodems, p):
         one_successfull_is_enough = False
     else:
         gws = [p['gw']]
+
+    if p['action'] == 'call':
+        one_successfull_is_enough = True
+
     code = 0
     msg = ''
     num_gws_used = 0
     for gw in gws:
-        #print 'Dbg: Sending via %s' % gw
-        [codeThis, msgThis] = send_sms_for_all_backend_types(gw, GWs['gw'][gw], gsmmodems, p)
+        if p['action'] == 'call':
+            #print 'Dbg: Call via %s' % gw
+            [codeThis, msgThis] = make_call_for_all_backend_types(gw, GWs['gw'][gw], gsmmodems, p)
+        else:
+            #print 'Dbg: Sending via %s' % gw
+            [codeThis, msgThis] = send_sms_for_all_backend_types(gw, GWs['gw'][gw], gsmmodems, p)
         code += abs(codeThis)
         msg += '\n%s: %d; %s' % (gw, codeThis, msgThis)
         num_gws_used += 1
