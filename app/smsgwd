@@ -33,6 +33,7 @@ queue_semaphore = threading.BoundedSemaphore(value=1)
 # create variable for socket object
 serversocket = None
 # DB connection
+dbcnx = None
 dbc = None
 
 def socket_2_queue():
@@ -483,11 +484,11 @@ smsTx (
   priority INT NOT NULL,
   fnum VARCHAR(11) CHARACTER SET utf8mb4,
   tnum VARCHAR(11) CHARACTER SET utf8mb4,
-  text VARCHAR(2048) CHARACTER SET utf8mb4),
+  text VARCHAR(2048) CHARACTER SET utf8mb4,
   GetDeliveryReport BOOLEAN NOT NULL,
   send_code INT NOT NULL,
   send_result TEXT,
-  time TIMESTAMP
+  time TIMESTAMP)
 ''')
 
 
