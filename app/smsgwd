@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+import datetime
+import os
+
 # SMS GW Server handling multiple SMS GW backends
 import threading
 import socket
@@ -16,6 +19,9 @@ import logging
 from gsmmodem.modem import GsmModem, StatusReport, SentSms
 from gsmmodem.exceptions import TimeoutException, PinRequiredError, IncorrectPinError
 
+# For Adding received SMS's to DB
+import mysql.connector
+
 logging.basicConfig(level=logging.INFO)
 
 import pprint
@@ -26,6 +32,8 @@ queue_semaphore = threading.BoundedSemaphore(value=1)
 
 # create variable for socket object
 serversocket = None
+# DB connection
+dbc = None
 
 def socket_2_queue():
     """Get jobs from socket and fill into queue
@@ -62,14 +70,43 @@ def gsmmodem_handle_SMS(sms):
     """Process incomming SMSes (both those there was recived before smsgwd was started and during execution of smsgwd
     """
 
-    logging.info(
-        u'''SMS: F: %s at %s; st: %s, msg: %s''' % (
+    insert_query = '''INSERT INTO
+smsRx (
+  gw,
+  number,
+  time,
+  status,
+  text)
+VALUES (
+  %s,
+  %s,
+  %s,
+  %s,
+  %s)
+'''
+    dbc.execute(
+        insert_query,
+        (
+            'Sim',
             sms.number,
             sms.time,
             sms.status,
-            sms.text.encode('utf-16','surrogatepass').decode('utf-16'),
+            sms.text.encode('utf-16', 'surrogatepass').decode('utf-16'),
         )
     )
+    dbcnx.commit()
+
+    logging.info(
+        u'''SMS: F: %s at %s; st: %s, msg: %s''',
+        sms.number,
+        sms.time,
+        sms.status,
+        sms.text.encode('utf-16', 'surrogatepass').decode('utf-16'),
+    )
+    if False:
+        dbc.execute('select * from sms')
+        for _ in dbc:
+            logging.info(_)
 
 def gsmmodem_recieve_old_unread(modem):
     """gsmmodem: Read and delete old unread messages (existing SMSes when smsgwd starts)
@@ -264,6 +301,45 @@ def exec_queue_job(GWs, gsmmodems, p):
         code += abs(codeThis)
         msg += '\n%s: %d; %s' % (gw, codeThis, msgThis)
         num_gws_used += 1
+        if p['save_to_db']:
+            # Save sent SMS to DB
+            insert_query = '''INSERT INTO
+smsTx (
+  gw,
+  priority,
+  fnum,
+  tnum,
+  text,
+  GetDeliveryReport,
+  send_code,
+  send_result,
+  time)
+VALUES (
+  %s,
+  %d,
+  %s,
+  %s,
+  %s,
+  %d,
+  %d,
+  %s)
+'''
+            dbc.execute(
+                insert_query,
+                (
+                    gw,
+                    p['priority'],
+                    p['from'],
+                    p['to'],
+                    p['text'],
+                    p['GetDeliveryReport'],
+                    codeThis,
+                    msgThis,
+                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M%z"),
+                )
+            )
+            dbcnx.commit()
+
         if codeThis == 0 and one_successfull_is_enough:
             code = 0
             break
@@ -382,6 +458,38 @@ if __name__ == "__main__":
         backlog=5,  # queue up to <backlog> requests
         reuse_port=True,
     )
+
+    # Prepare database
+    dbcnx = mysql.connector.connect(
+        user=os.environ['SMSGW_DB_USER'],
+        password=os.environ['SMSGW_DB_PASSWORD'],
+        host=os.environ['SMSGW_DB_HOST'],
+        database=os.environ['SMSGW_DB_DATABASE'],
+    )
+    dbc = dbcnx.cursor()
+    dbc.execute('''CREATE TABLE IF NOT EXISTS
+smsRx (
+  id INT NOT NULL AUTO_INCREMENT, PRIMARY KEY (id),
+  gw VARCHAR(100),
+  number VARCHAR(11) CHARACTER SET utf8mb4,
+  time TIMESTAMP,
+  status VARCHAR(11) CHARACTER SET utf8mb4,
+  text VARCHAR(2048) CHARACTER SET utf8mb4)
+''')
+    dbc.execute('''CREATE TABLE IF NOT EXISTS
+smsTx (
+  id INT NOT NULL AUTO_INCREMENT, PRIMARY KEY (id),
+  gw VARCHAR(100),
+  priority INT NOT NULL,
+  fnum VARCHAR(11) CHARACTER SET utf8mb4,
+  tnum VARCHAR(11) CHARACTER SET utf8mb4,
+  text VARCHAR(2048) CHARACTER SET utf8mb4),
+  GetDeliveryReport BOOLEAN NOT NULL,
+  send_code INT NOT NULL,
+  send_result TEXT,
+  time TIMESTAMP
+''')
+
 
     # Create two threads as follows
     thread_socket_2_queue = threading.Thread(target=socket_2_queue, args=() )

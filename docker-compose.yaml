@@ -9,5 +9,32 @@ services:
     restart: always
     devices:
       - "/dev/serial/by-id/usb-1a86_USB2.0-Serial-if00-port0:/dev/gsmmodemMySim"
+    environment:
+      - SMSGW_DB_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - SMSGW_DB_HOST=db
+      - SMSGW_DB_DATABASE=${MYSQL_DATABASE}
+      - SMSGW_DB_USER=${MYSQL_USER}
+      - SMSGW_DB_PASSWORD=${MYSQL_PASSWORD}
     ports:
       - '2525:2525'
+    depends_on:
+      - db
+    #volumes:
+    #  - type: bind
+    #    source: ./app
+    #    target: /usr/src/app
+
+  db:
+    container_name: db
+    image: mariadb:latest
+    command: '--default-authentication-plugin=mysql_native_password'
+    volumes:
+      - type: bind
+        source: ./db_data
+        target: /var/lib/mysql
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=smsgw
+      - MYSQL_USER=smsgw
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}

@@ -1,1 +1,2 @@
 python-gsmmodem-new
+mysql-connector-python-rf

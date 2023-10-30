@@ -35,6 +35,7 @@ def main():
     parser.add_argument('--msg',		'-m', action='store', type=str, required=True, help='SMS Message')
     parser.add_argument('--report',		'-r', dest='report', action='store_true',  default=True, help='Request Status/delivery report')
     parser.add_argument('--no-report',	'-R', dest='report', action='store_false', default=True, help='Don\'t request Status/delivery report')
+    parser.add_argument('--no-save-to-db',	'-S', dest='save_to_db', action='store_false', default=True, help='Don\'t store SMS in sent DB')
     parser.add_argument('--smsit.dk-codes', dest='smsitHelp', default=False, action='store_true', help='Print SMSit.dk exit codes')
     parser.add_argument('--verbose',	'-v', default=0, action='count', help='Verbose, more -v => More verbose')
     argp = parser.parse_args()
@@ -60,6 +61,7 @@ def main():
     params['msg'] = argp.msg
     params['GetDeliveryReport'] = argp.report
     params['verbose'] = argp.verbose
+    params['save_to_db'] = argp.save_to_db
 
     gw = smsgw.smsgw(argp.host, argp.port)
     resp = gw.send_sms(params)
