@@ -304,6 +304,17 @@ def exec_queue_job(GWs, gsmmodems, p):
         num_gws_used += 1
         if p['save_to_db']:
             # Save sent SMS to DB
+            #smsTx (
+            #  id INT NOT NULL AUTO_INCREMENT, PRIMARY KEY (id),
+            #  gw VARCHAR(100),
+            #  priority INT NOT NULL,
+            #  fnum VARCHAR(11) CHARACTER SET utf8mb4,
+            #  tnum VARCHAR(11) CHARACTER SET utf8mb4,
+            #  text VARCHAR(2048) CHARACTER SET utf8mb4,
+            #  GetDeliveryReport BOOLEAN NOT NULL,
+            #  send_code INT NOT NULL,
+            #  send_result TEXT,
+            #  time TIMESTAMP)
             insert_query = '''INSERT INTO
 smsTx (
   gw,
@@ -317,12 +328,13 @@ smsTx (
   time)
 VALUES (
   %s,
-  %d,
   %s,
   %s,
   %s,
-  %d,
-  %d,
+  %s,
+  %s,
+  %s,
+  %s,
   %s)
 '''
             dbc.execute(
@@ -332,11 +344,11 @@ VALUES (
                     p['priority'],
                     p['from'],
                     p['to'],
-                    p['text'],
+                    p['msg'],
                     p['GetDeliveryReport'],
                     codeThis,
                     msgThis,
-                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M%z"),
+                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S%z"),
                 )
             )
             dbcnx.commit()
@@ -490,7 +502,6 @@ smsTx (
   send_result TEXT,
   time TIMESTAMP)
 ''')
-
 
     # Create two threads as follows
     thread_socket_2_queue = threading.Thread(target=socket_2_queue, args=() )
