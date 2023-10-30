@@ -22,6 +22,7 @@ class smsgw:
         - params['gw'] (string containg one of: cheap, default, any, all, or one of the GWs in active list in smsgwd.cfg)
         - params['to'] (Recipient phone number, either national (no +) or international (starting with +))
         - params['msg'] (The message)
+        - params['save_to_db'] (Store Message in smsTx table)
 
         Optional arguments (can always be specified)
         - params['from'] (From name, only some GW backends support that, eg. of type smsit.dk)
