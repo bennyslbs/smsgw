@@ -18,10 +18,11 @@ services:
       - '2525:2525'
     depends_on:
       - db
-    #volumes:
-    #  - type: bind
-    #    source: ./app
-    #    target: /usr/src/app
+    volumes:
+      # Note also copied in image, but easier to use a volume during development(no rebuild required)
+      - type: bind
+        source: ./app
+        target: /usr/src/app
 
   db:
     image: mariadb:latest
