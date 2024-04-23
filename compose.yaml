@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: ./container/Dockerfile
-    restart: always
+    restart: unless-stopped
     devices:
       - "/dev/serial/by-id/usb-1a86_USB2.0-Serial-if00-port0:/dev/gsmmodemMySim"
     environment:
@@ -31,7 +31,7 @@ services:
       - type: bind
         source: ./db_data
         target: /var/lib/mysql
-    restart: always
+    restart: unless-stopped
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
       - MYSQL_DATABASE=smsgw
@@ -40,7 +40,7 @@ services:
 
   phpmyadmin:
     image: phpmyadmin
-    restart: always
+    restart: unless-stopped
     ports:
       - 8080:80
     environment:
